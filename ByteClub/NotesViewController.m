@@ -14,11 +14,25 @@
 @interface NotesViewController ()<NoteDetailsViewControllerDelegate>
 
 @property (nonatomic, strong) NSArray *notes;
+@property (nonatomic, strong) NSURLSession *session;
 
 
 @end
 
 @implementation NotesViewController
+
+- (id)initWithCoder:(NSCoder *)aDecoder {
+    self = [super initWithCoder:aDecoder];
+    if (self) {
+        NSURLSessionConfiguration *config = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        [config setHTTPAdditionalHeaders:@{@"Authorization" : [Dropbox apiAuthorizationHeader]}];
+        _session = [NSURLSession sessionWithConfiguration:config];
+        
+    }
+    
+    return self;
+    
+}
 
 
 - (id)initWithStyle:(UITableViewStyle)style
@@ -39,6 +53,44 @@
 // list files found in the root dir of appFolder
 - (void)notesOnDropbox
 {
+    NSURL *url = [Dropbox appRootURL];
+    
+    NSURLSessionDataTask *dataTask = [self.session dataTaskWithURL:url
+                                                 completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+                                          if (!error) {
+                                              NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+                                              if (httpResp.statusCode == 200) {
+                                                  NSError *jsonError;
+                                                  NSDictionary *notesJSON = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingAllowFragments error:&jsonError];
+                                                  
+                                                  NSMutableArray *notesFound = [[NSMutableArray alloc] init];
+                                                  
+                                                  if (!jsonError) {
+                                                      NSArray *contentsOfRootDirectory = notesJSON[@"contents"];
+                                                      for (NSDictionary *data in contentsOfRootDirectory) {
+                                                          if (![data[@"is_dir"] boolValue]) {
+                                                              DBFile *note = [[DBFile alloc] initWithJSONData:data];
+                                                              [notesFound addObject:note];
+                                                          }
+                                                      }
+                                                      
+                                                      [notesFound sortUsingComparator:^NSComparisonResult(id obj1, id obj2) {
+                                                          return [obj1 compare:obj2];
+                                                      }];
+                                                      
+                                                      self.notes = notesFound;
+                                                      
+                                                      dispatch_async(dispatch_get_main_queue(), ^{
+                                                          [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+                                                          [self.tableView reloadData];
+                                                      });
+                                                      
+                                                  }
+                                              }
+                                          }
+                                      }];
+    [dataTask resume];
+    
 }
 
 - (void)didReceiveMemoryWarning

@@ -55,7 +55,32 @@
 
 -(void)retreiveNoteText
 {
-
+    NSString *fileApi = @"https://api-content.dropbox.com/1/files/dropbox";
+    NSString *escapedPath = [_note.path stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    
+    NSString *urlStr = [NSString stringWithFormat:@"%@/%@", fileApi,escapedPath];
+    [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
+    NSURL *url = [NSURL URLWithString:urlStr];
+    
+    [[_session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (!error) {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            if (httpResp.statusCode == 200) {
+                NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [UIApplication sharedApplication].networkActivityIndicatorVisible = NO;
+                    self.textView.text = text;
+                });
+            
+            }
+            else {
+                
+            }
+        }
+        else {
+            
+        }
+    } ] resume];
 }
 
 #pragma mark - send messages to delegate
@@ -76,7 +101,22 @@
         _note.path = _filename.text;
         
         // - UPLOAD FILE TO DROPBOX - //
-        [self.delegate noteDetailsViewControllerDoneWithDetails:self];
+        NSURL *url = [Dropbox uploadURLForPath:_note.path];
+        
+        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] initWithURL:url];
+        [request setHTTPMethod:@"PUT"];
+        
+        NSData *noteContents = [_note.contents dataUsingEncoding:NSUTF8StringEncoding];
+        
+        NSURLSessionUploadTask *uploadTask = [_session uploadTaskWithRequest:request fromData:noteContents completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            
+            if (!error && httpResp.statusCode == 200) {
+                [self.delegate noteDetailsViewControllerDoneWithDetails:self];
+            }
+        }];
+        
+        [uploadTask resume];
         
     } else {
         UIAlertView *noTextAlert = [[UIAlertView alloc] initWithTitle:@"No text"
